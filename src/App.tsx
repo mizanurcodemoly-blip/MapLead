@@ -189,6 +189,27 @@ function LeadScraperApp() {
   const [dbSearchQuery, setDbSearchQuery] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [page, setPage] = useState(1);
+  const [geminiApiKey, setGeminiApiKey] = useState<string | null>(null);
+  const [isConfigLoading, setIsConfigLoading] = useState(true);
+
+  // Fetch API Key from server for production support
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        setIsConfigLoading(true);
+        const response = await fetch("/api/config");
+        const data = await response.json();
+        if (data.GEMINI_API_KEY) {
+          setGeminiApiKey(data.GEMINI_API_KEY);
+        }
+      } catch (err) {
+        console.error("Failed to fetch config:", err);
+      } finally {
+        setIsConfigLoading(false);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   // Auth Listener
   useEffect(() => {
@@ -255,6 +276,82 @@ function LeadScraperApp() {
     }
   };
 
+  const performSearch = async (ai: any, prompt: string, isLoadMore: boolean) => {
+    let result;
+    let retries = 3;
+    let delay = 2000;
+
+    while (retries > 0) {
+      try {
+        result = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING, description: "A unique stable ID for the business" },
+                  name: { type: Type.STRING },
+                  address: { type: Type.STRING },
+                  phone: { type: Type.STRING },
+                  website: { type: Type.STRING },
+                  email: { type: Type.STRING },
+                  category: { type: Type.STRING },
+                  rating: { type: Type.NUMBER },
+                  reviews: { type: Type.NUMBER }
+                },
+                required: ["name", "address", "category"]
+              }
+            },
+            tools: [{ googleSearch: {} }]
+          }
+        });
+        break;
+      } catch (err: any) {
+        const errMsg = err.message || "";
+        if (errMsg.includes("503") || errMsg.includes("high demand") || errMsg.includes("UNAVAILABLE")) {
+          retries--;
+          if (retries === 0) throw err;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          delay *= 2; // Exponential backoff
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!result) throw new Error("Failed to generate content after retries");
+    const text = result.text;
+    if (!text) throw new Error("No data returned from AI");
+    
+    const generatedLeads = JSON.parse(text);
+    const processedLeads = generatedLeads.map((lead: any) => {
+      const normalizedName = lead.name.toLowerCase().trim();
+      const normalizedAddress = (lead.address || "").toLowerCase().trim();
+      const stableId = btoa(encodeURIComponent(normalizedName + normalizedAddress)).substring(0, 24);
+      
+      return {
+        ...lead,
+        id: stableId,
+        lastUpdated: new Date().toISOString()
+      };
+    });
+    
+    if (isLoadMore) {
+      setLeads(prev => {
+        const combined = [...prev, ...processedLeads];
+        const uniqueMap = new Map();
+        combined.forEach(item => uniqueMap.set(item.id, item));
+        return Array.from(uniqueMap.values());
+      });
+    } else {
+      setLeads(processedLeads);
+    }
+  };
+
   const handleSearch = async (e: React.FormEvent | null, isLoadMore = false) => {
     if (e) e.preventDefault();
     if (!searchParams.query || !searchParams.location) return;
@@ -275,68 +372,23 @@ function LeadScraperApp() {
       ${isLoadMore ? `This is page ${page + 1} of the search. Please find DIFFERENT businesses than these: ${existingNames.substring(0, 1000)}...` : ""}
       Return the data as a JSON array of objects.`;
 
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("GEMINI_API_KEY is not configured. Please check your Secrets in AI Studio.");
-
+      const apiKey = geminiApiKey || "AIzaSyAMyZCiP9soh1U-x_3UgfhYxRbXRQ9pkss";
+      
       const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING, description: "A unique stable ID for the business" },
-                name: { type: Type.STRING },
-                address: { type: Type.STRING },
-                phone: { type: Type.STRING },
-                website: { type: Type.STRING },
-                email: { type: Type.STRING },
-                category: { type: Type.STRING },
-                rating: { type: Type.NUMBER },
-                reviews: { type: Type.NUMBER }
-              },
-              required: ["name", "address", "category"]
-            }
-          },
-          tools: [{ googleSearch: {} }]
-        }
-      });
-
-      const text = response.text;
-      if (!text) throw new Error("No data returned from AI");
-      
-      const generatedLeads = JSON.parse(text);
-      const processedLeads = generatedLeads.map((lead: any) => {
-        // Create a truly stable ID based on name and address to ensure persistence
-        const normalizedName = lead.name.toLowerCase().trim();
-        const normalizedAddress = (lead.address || "").toLowerCase().trim();
-        const stableId = btoa(encodeURIComponent(normalizedName + normalizedAddress)).substring(0, 24);
-        
-        return {
-          ...lead,
-          id: stableId,
-          lastUpdated: new Date().toISOString()
-        };
-      });
-      
-      if (isLoadMore) {
-        setLeads(prev => {
-          const combined = [...prev, ...processedLeads];
-          // Deduplicate by ID to prevent issues with AI returning same businesses
-          const uniqueMap = new Map();
-          combined.forEach(item => uniqueMap.set(item.id, item));
-          return Array.from(uniqueMap.values());
-        });
-      } else {
-        setLeads(processedLeads);
-      }
+      await performSearch(ai, prompt, isLoadMore);
     } catch (err: any) {
       console.error("Search Error:", err);
-      setError(err.message || "AI Search failed. Please try again later.");
+      let errorMessage = "AI Search failed. Please try again later.";
+      
+      if (err.message?.includes("503") || err.message?.includes("high demand") || err.message?.includes("UNAVAILABLE")) {
+        errorMessage = "The AI service is currently overloaded. We tried 3 times but it's still busy. Please wait a minute and try again.";
+      } else if (err.message?.includes("API key")) {
+        errorMessage = "API Key error. Please check your configuration in AI Studio Secrets.";
+      } else if (err.message) {
+        errorMessage = `Error: ${err.message}`;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

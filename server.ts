@@ -10,11 +10,18 @@ const PORT = 3000;
 
 app.use(express.json());
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyBtxZ2INYAjwl9o_ZKExh6a7am-U3B5w_4";
 
 // API Routes
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/api/config", (req, res) => {
+  console.log("Config requested. Key present:", !!GEMINI_API_KEY);
+  res.json({
+    GEMINI_API_KEY: GEMINI_API_KEY
+  });
 });
 
 // Vite middleware setup
