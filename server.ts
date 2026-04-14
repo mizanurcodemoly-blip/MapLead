@@ -10,7 +10,7 @@ const PORT = 3000;
 
 app.use(express.json());
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_KEY = const apiKey = import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || "";;
 
 // API Routes
 app.get("/api/health", (req, res) => {
