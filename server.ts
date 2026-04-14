@@ -10,7 +10,7 @@ const PORT = 3000;
 
 app.use(express.json());
 
-const GEMINI_API_KEY = "AIzaSyAMyZCiP9soh1U-x_3UgfhYxRbXRQ9pkss";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 
 // API Routes
 app.get("/api/health", (req, res) => {
