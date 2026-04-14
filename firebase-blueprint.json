@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "Lead": {
+      "title": "Lead",
+      "description": "A business lead scraped from Google Maps",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Google Place ID" },
+        "name": { "type": "string", "description": "Business Name" },
+        "address": { "type": "string", "description": "Formatted Address" },
+        "phone": { "type": "string", "description": "Phone Number" },
+        "website": { "type": "string", "description": "Website URL" },
+        "email": { "type": "string", "description": "Contact Email" },
+        "category": { "type": "string", "description": "Business Category" },
+        "rating": { "type": "number", "description": "Average Rating" },
+        "reviews": { "type": "number", "description": "Total Review Count" },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "ISO Timestamp of last sync" },
+        "ownerId": { "type": "string", "description": "UID of the user who saved this lead" }
+      },
+      "required": ["id", "name", "ownerId"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Collection of saved business leads"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    }
+  }
+}
