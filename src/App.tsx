@@ -198,9 +198,21 @@ function LeadScraperApp() {
       try {
         setIsConfigLoading(true);
         const response = await fetch("/api/config");
-        const data = await response.json();
-        if (data.GEMINI_API_KEY) {
-          setGeminiApiKey(data.GEMINI_API_KEY);
+        
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}`);
+        }
+        
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          if (data.GEMINI_API_KEY) {
+            setGeminiApiKey(data.GEMINI_API_KEY);
+          } else {
+            console.warn("Config fetched, but GEMINI_API_KEY was empty.");
+          }
+        } else {
+          console.error("Config endpoint returned non-JSON. The custom server might not be running.");
         }
       } catch (err) {
         console.error("Failed to fetch config:", err);
@@ -372,7 +384,10 @@ function LeadScraperApp() {
       ${isLoadMore ? `This is page ${page + 1} of the search. Please find DIFFERENT businesses than these: ${existingNames.substring(0, 1000)}...` : ""}
       Return the data as a JSON array of objects.`;
 
-      const apiKey = geminiApiKey || "AIzaSyAMyZCiP9soh1U-x_3UgfhYxRbXRQ9pkss";
+      const apiKey = geminiApiKey || "";
+      if (!apiKey) {
+        throw new Error("MISSING_CONFIG: The Gemini API Key was not found. Please ensure it is set in AI Studio Secrets and the server is running.");
+      }
       
       const ai = new GoogleGenAI({ apiKey });
       await performSearch(ai, prompt, isLoadMore);
@@ -380,10 +395,14 @@ function LeadScraperApp() {
       console.error("Search Error:", err);
       let errorMessage = "AI Search failed. Please try again later.";
       
-      if (err.message?.includes("503") || err.message?.includes("high demand") || err.message?.includes("UNAVAILABLE")) {
+      if (err.message?.includes("MISSING_CONFIG")) {
+        errorMessage = err.message;
+      } else if (err.message?.includes("503") || err.message?.includes("high demand") || err.message?.includes("UNAVAILABLE")) {
         errorMessage = "The AI service is currently overloaded. We tried 3 times but it's still busy. Please wait a minute and try again.";
-      } else if (err.message?.includes("API key")) {
-        errorMessage = "API Key error. Please check your configuration in AI Studio Secrets.";
+      } else if (err.message?.includes("leaked")) {
+        errorMessage = "Your API key has been disabled because it was leaked. Please generate a new API key in Google AI Studio and update your Secrets.";
+      } else if (err.message?.includes("API key") || err.message?.includes("API_KEY")) {
+        errorMessage = "The Gemini API rejected your key. Please verify your key in AI Studio Secrets is valid and active.";
       } else if (err.message) {
         errorMessage = `Error: ${err.message}`;
       }

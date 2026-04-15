@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
 
@@ -10,23 +9,23 @@ const PORT = 3000;
 
 app.use(express.json());
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyBtxZ2INYAjwl9o_ZKExh6a7am-U3B5w_4";
-
 // API Routes
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
 app.get("/api/config", (req, res) => {
-  console.log("Config requested. Key present:", !!GEMINI_API_KEY);
+  const key = process.env.GEMINI_API_KEY || "";
+  console.log("Config requested. Key present:", !!key);
   res.json({
-    GEMINI_API_KEY: GEMINI_API_KEY
+    GEMINI_API_KEY: key
   });
 });
 
 // Vite middleware setup
 async function setupVite() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
